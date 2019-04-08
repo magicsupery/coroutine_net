@@ -49,3 +49,20 @@ class ExitWaitTaskSC(SystemCall):
 		# add current_task to wait
 		self.scheduler.wait_for_exit(self.task, new_task.id)
 		return
+
+class ReadWaitSC(SystemCall):
+	def __init__(self, fd):
+		super(ReadWaitSC, self).__init__()
+		self.fd = fd
+
+	def handle(self):
+		self.scheduler.add_read_wait_task(self.fd, self.task)
+
+
+class WriteWaitSC(SystemCall):
+	def __init__(self, fd):
+		super(WriteWaitSC, self).__init__()
+		self.fd = fd
+
+	def handle(self):
+		self.scheduler.add_write_wait_task(self.fd, self.task)

@@ -1,4 +1,5 @@
 import Queue
+import select
 from collections import defaultdict
 from systemcall import SystemCall
 
@@ -8,12 +9,38 @@ class Scheduler:
 		self.tasks= Queue.Queue()
 		self.id_2_task = {}
 		self.id_2_exitwating_task = defaultdict(list)
+
+		self.fd_2_reading_tasks = {}
+		self.fd_2_writing_tasks = {}
 		
+		self.id_2_fds = {}
+		self.new_task(self.io_task())
+
+	def io_loop(self, timeout):
+		if not self.fd_2_reading_tasks and not self.fd_2_writing_tasks:
+			return
+
+		r, w, e = select.select(self.fd_2_reading_tasks, self.fd_2_writing_tasks, [], timeout)
+		for fd in r:
+			self.schedule_task(self.fd_2_reading_tasks.pop(fd))
+
+		for fd in w:
+			self.schedule_task(self.fd_2_writing_tasks.pop(fd))
+
+	def io_task(self):
+		while True:
+			if not self.tasks:
+				self.io_loop(None)
+			else:
+				self.io_loop(0)
+			
+			yield
 
 	def loop(self):
 		while not self.tasks.empty():
 			task = self.tasks.get()
-			print "switch to ", task.id
+			if task.id != 1:
+				print "switch to ", task.id
 			try:
 				result = task.run()
 				if isinstance(result, SystemCall):
@@ -46,6 +73,11 @@ class Scheduler:
 		print "task ", task_id, " exit"
 		print self.id_2_task
 		self.id_2_task.pop(task_id)
+		
+		fd = self.id_2_fds.pop(task_id, None)
+		if fd:
+			self.fd_2_reading_tasks.pop(fd, None)
+			self.fd_2_writing_tasks.pop(fd, None)
 
 		waiting_tasks = self.id_2_exitwating_task.pop(task_id, [])
 		for task in waiting_tasks:
@@ -57,6 +89,14 @@ class Scheduler:
 
 		self.id_2_exitwating_task[wait_task_id].append(task)
 		return True
+
+	def add_read_wait_task(self, fd, task):
+		self.fd_2_reading_tasks[fd] = task
+		self.id_2_fds[task.id] = fd
+
+	def add_write_wait_task(self, fd, task):
+		self.fd_2_writing_tasks[fd] = task
+		self.id_2_fds[task.id] = fd
 
 
 class Task(object):
